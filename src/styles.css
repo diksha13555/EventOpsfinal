@@ -1,0 +1,124 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-display: "Bricolage Grotesque", "Inter", sans-serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+}
+
+/*
+  THE ONE ACCENT COLOUR: change --primary (light) and --primary (dark) below
+  and the whole site follows. Green / amber / red are ONLY for status.
+*/
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.21 0.02 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.02 255);
+  --primary: oklch(0.52 0.21 258);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.96 0.004 250);
+  --secondary-foreground: oklch(0.21 0.02 255);
+  --muted: oklch(0.96 0.004 250);
+  --muted-foreground: oklch(0.5 0.02 255);
+  --accent: oklch(0.95 0.01 255);
+  --accent-foreground: oklch(0.21 0.02 255);
+  --destructive: oklch(0.6 0.22 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.915 0.006 255);
+  --input: oklch(0.88 0.008 255);
+  --ring: oklch(0.52 0.21 258);
+  --success: oklch(0.65 0.16 152);
+  --warning: oklch(0.78 0.15 78);
+}
+
+.dark {
+  --background: oklch(0.165 0.012 258);
+  --foreground: oklch(0.96 0.005 255);
+  --card: oklch(0.2 0.014 258);
+  --card-foreground: oklch(0.96 0.005 255);
+  --popover: oklch(0.2 0.014 258);
+  --popover-foreground: oklch(0.96 0.005 255);
+  --primary: oklch(0.7 0.16 255);
+  --primary-foreground: oklch(0.16 0.02 258);
+  --secondary: oklch(0.26 0.015 258);
+  --secondary-foreground: oklch(0.96 0.005 255);
+  --muted: oklch(0.25 0.014 258);
+  --muted-foreground: oklch(0.72 0.02 255);
+  --accent: oklch(0.27 0.016 258);
+  --accent-foreground: oklch(0.96 0.005 255);
+  --destructive: oklch(0.68 0.2 25);
+  --destructive-foreground: oklch(0.16 0.02 25);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.7 0.16 255);
+  --success: oklch(0.72 0.16 152);
+  --warning: oklch(0.82 0.15 80);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+}
+
+/* One flat card style used by every block on the admin pages. */
+@utility panel {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
