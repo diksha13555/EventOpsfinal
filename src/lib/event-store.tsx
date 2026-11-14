@@ -1,38 +1,59 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
+  addIssueApi,
+  addExpenseApi,
+  addTaskApi,
+  getEventData,
+  resetDemoDataApi,
+  resolveIssueApi,
+  setTaskStatusApi,
+  type ApiResult,
+} from "./event-api";
+import {
   EMPTY_STATE,
   TASK_STAGES,
-  makeSeed,
+  type EventData,
   type EventState,
   type Priority,
   type Severity,
 } from "./event-data";
 
+/*
+  How data flows:
+    1. The database is the source of truth. On load, the browser asks the server for everything.
+    2. When you change something, the screen updates instantly (so it feels fast), then the change is
+       saved on the server. The server answers with the real data, which replaces what is on screen.
+    3. Items that are still being saved have a negative id and are shown as "Saving...".
+*/
+
 type Action =
-  | { type: "init"; now: number }
+  | { type: "replace"; data: EventData }
   | { type: "add_task"; title: string; priority: Priority; due: string; now: number }
   | { type: "move_task"; id: number; now: number }
+  | { type: "add_expense"; categoryId: number; amount: number; note: string; spentOn: string; now: number }
   | { type: "add_issue"; title: string; severity: Severity; now: number }
   | { type: "resolve_issue"; id: number; now: number };
 
-const nextId = (items: { id: number }[]) => items.reduce((max, i) => Math.max(max, i.id), 0) + 1;
+const tempId = (now: number) => -now;
 
 function log(state: EventState, text: string, now: number) {
-  return [{ id: nextId(state.activity), text, at: now }, ...state.activity].slice(0, 20);
+  return [{ id: tempId(now), text, at: now }, ...state.activity].slice(0, 20);
 }
 
 function reducer(state: EventState, action: Action): EventState {
   switch (action.type) {
-    case "init":
-      return makeSeed(action.now);
+    case "replace":
+      return { ...action.data, ready: true };
 
     case "add_task":
       return {
@@ -40,7 +61,7 @@ function reducer(state: EventState, action: Action): EventState {
         tasks: [
           ...state.tasks,
           {
-            id: nextId(state.tasks),
+            id: tempId(action.now),
             title: action.title,
             owner: "You",
             due: action.due,
@@ -63,11 +84,25 @@ function reducer(state: EventState, action: Action): EventState {
       };
     }
 
+    case "add_expense": {
+      const category = state.budget.find((b) => b.id === action.categoryId);
+      if (!category) return state;
+      return {
+        ...state,
+        budget: state.budget.map((b) => (b.id === category.id ? { ...b, spent: b.spent + action.amount } : b)),
+        expenses: [
+          { id: tempId(action.now), categoryId: category.id, amount: action.amount, note: action.note, spentOn: action.spentOn },
+          ...state.expenses,
+        ],
+        activity: log(state, `Expense added: ₹${action.amount.toLocaleString("en-IN")} to ${category.head}`, action.now),
+      };
+    }
+
     case "add_issue":
       return {
         ...state,
         issues: [
-          { id: nextId(state.issues), title: action.title, severity: action.severity, status: "Open" },
+          { id: tempId(action.now), title: action.title, severity: action.severity, status: "Open" },
           ...state.issues,
         ],
         activity: log(state, `Issue logged: ${action.title}`, action.now),
@@ -85,41 +120,139 @@ function reducer(state: EventState, action: Action): EventState {
   }
 }
 
+type Problem = { problem: string; hint: string };
+
 type Store = {
   state: EventState;
   now: number; // refreshed every 30 seconds so countdowns and "overdue" stay current
+  loadError: Problem | null; // set when the first load from the database fails
+  saveError: string | null; // set when a change could not be saved
+  saving: boolean; // true while a change is being saved
+  retryLoad: () => void;
+  dismissSaveError: () => void;
   addTask: (title: string, priority: Priority, due: string) => void;
   moveTask: (id: number) => void;
   addIssue: (title: string, severity: Severity) => void;
+  addExpense: (categoryId: number, amount: number, note: string, spentOn: string) => void;
   resolveIssue: (id: number) => void;
+  resetDemo: () => Promise<boolean>; // true when the reset worked
 };
 
 const StoreContext = createContext<Store | null>(null);
 
+const NETWORK_PROBLEM: Problem = {
+  problem: "Could not reach the server.",
+  hint: "Check your internet connection and try again.",
+};
+
 export function EventStoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, EMPTY_STATE);
   const [now, setNow] = useState(0);
+  const [loadError, setLoadError] = useState<Problem | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const pending = useRef(0); // how many changes are still being saved
+  const lastGood = useRef<EventData | null>(null); // the last data the database confirmed
 
-  // The demo data is created in the browser (not on the server) because it depends on today's date.
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const r = await getEventData();
+      if (r.ok) {
+        lastGood.current = r.data;
+        dispatch({ type: "replace", data: r.data });
+      } else setLoadError({ problem: r.problem, hint: r.hint });
+    } catch {
+      setLoadError(NETWORK_PROBLEM);
+    }
+  }, []);
+
   useEffect(() => {
-    const t = Date.now();
-    setNow(t);
-    dispatch({ type: "init", now: t });
+    setNow(Date.now());
+    void load();
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
-  }, []);
+  }, [load]);
+
+  // After a failed save: go back to what the database last confirmed, then try to refresh.
+  const undoUnsaved = useCallback(async () => {
+    if (pending.current !== 0) return;
+    if (lastGood.current) dispatch({ type: "replace", data: lastGood.current });
+    await load();
+  }, [load]);
+
+  // Saves one change. Only the LAST answer replaces the screen, so a slow earlier answer
+  // can never overwrite a newer change.
+  const persist = useCallback(
+    async (call: () => Promise<ApiResult>): Promise<boolean> => {
+      pending.current += 1;
+      setSaving(true);
+      let ok = false;
+      try {
+        const r = await call();
+        pending.current -= 1;
+        if (r.ok) {
+          ok = true;
+          lastGood.current = r.data;
+          if (pending.current === 0) dispatch({ type: "replace", data: r.data });
+        } else {
+          setSaveError(`${r.problem} ${r.hint}`);
+          await undoUnsaved();
+        }
+      } catch {
+        pending.current -= 1;
+        setSaveError("That change could not be saved, so it was undone.");
+        await undoUnsaved();
+      }
+      if (pending.current === 0) setSaving(false);
+      return ok;
+    },
+    [undoUnsaved],
+  );
 
   const store = useMemo<Store>(
     () => ({
       state,
       now,
-      addTask: (title, priority, due) =>
-        dispatch({ type: "add_task", title, priority, due, now: Date.now() }),
-      moveTask: (id) => dispatch({ type: "move_task", id, now: Date.now() }),
-      addIssue: (title, severity) => dispatch({ type: "add_issue", title, severity, now: Date.now() }),
-      resolveIssue: (id) => dispatch({ type: "resolve_issue", id, now: Date.now() }),
+      loadError,
+      saveError,
+      saving,
+      retryLoad: () => void load(),
+      dismissSaveError: () => setSaveError(null),
+
+      addTask: (title, priority, due) => {
+        dispatch({ type: "add_task", title, priority, due, now: Date.now() });
+        void persist(() => addTaskApi({ data: { title, priority, due } }));
+      },
+
+      moveTask: (id) => {
+        const task = state.tasks.find((t) => t.id === id);
+        if (!task || id < 0) return; // still being saved
+        const next = TASK_STAGES[TASK_STAGES.indexOf(task.status) + 1];
+        if (!next) return;
+        dispatch({ type: "move_task", id, now: Date.now() });
+        void persist(() => setTaskStatusApi({ data: { id, status: next } }));
+      },
+
+      addExpense: (categoryId, amount, note, spentOn) => {
+        dispatch({ type: "add_expense", categoryId, amount, note, spentOn, now: Date.now() });
+        void persist(() => addExpenseApi({ data: { categoryId, amount, note, spentOn } }));
+      },
+
+      addIssue: (title, severity) => {
+        dispatch({ type: "add_issue", title, severity, now: Date.now() });
+        void persist(() => addIssueApi({ data: { title, severity } }));
+      },
+
+      resolveIssue: (id) => {
+        if (id < 0) return; // still being saved
+        dispatch({ type: "resolve_issue", id, now: Date.now() });
+        void persist(() => resolveIssueApi({ data: { id } }));
+      },
+
+      resetDemo: () => persist(() => resetDemoDataApi()),
     }),
-    [state, now],
+    [state, now, loadError, saveError, saving, load, persist],
   );
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;

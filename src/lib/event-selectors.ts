@@ -1,5 +1,6 @@
 // Every number on screen is calculated here, from the shared data.
 import type { EventState, Severity, Task } from "./event-data";
+import { rupees as rupeesText } from "./format";
 
 export const todayIso = (now: number) => {
   const d = new Date(now);
@@ -38,6 +39,69 @@ export function countdown(ms: number) {
 }
 
 export const budgetPct = (spent: number, total: number) => Math.round((spent / total) * 100);
+
+// ---- Budget planning -------------------------------------------------------------------
+// ASSUMPTION: the budget is spent evenly over the PLANNING_DAYS before the event starts.
+// "Planned by today" is the share of the total budget that even pace would have used by now.
+export const PLANNING_DAYS = 21;
+const DAY_MS = 86_400_000;
+const dayNumber = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return Math.floor(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1) / DAY_MS);
+};
+export function addDays(iso: string, n: number) {
+  const d = new Date((dayNumber(iso) + n) * DAY_MS);
+  return d.toISOString().slice(0, 10);
+}
+const sumOf = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+
+export function budgetSummary(s: EventState, now: number) {
+  const total = sumOf(s.budget.map((b) => b.total));
+  const spent = sumOf(s.budget.map((b) => b.spent));
+  const eventDay = todayIso(s.eventStart);
+  const startDay = addDays(eventDay, -PLANNING_DAYS);
+  const elapsed = Math.min(PLANNING_DAYS, Math.max(0, dayNumber(todayIso(now)) - dayNumber(startDay)));
+  const fraction = elapsed / PLANNING_DAYS;
+  const plannedToDate = Math.round(total * fraction);
+  // Forecast = spending so far, continued at the same daily pace until the event.
+  const forecast: number | null =
+    s.eventStart > 0 && now >= s.eventStart ? spent : elapsed > 0 ? Math.round((spent / elapsed) * PLANNING_DAYS) : null;
+  return {
+    total,
+    spent,
+    remaining: total - spent,
+    pct: total ? Math.round((spent / total) * 100) : 0,
+    startDay,
+    eventDay,
+    elapsed,
+    fraction,
+    plannedToDate,
+    aheadOfPlan: spent - plannedToDate, // positive = spending faster than the even pace
+    forecast,
+    forecastGap: forecast === null ? null : total - forecast, // positive = forecast to finish under budget
+  };
+}
+
+// One point per day from the start of planning to the event day, for the "spent vs planned" chart.
+export function spendingSeries(s: EventState, now: number) {
+  const b = budgetSummary(s, now);
+  const today = todayIso(now);
+  const points: { date: string; planned: number; spent: number | null }[] = [];
+  for (let i = 0; i <= PLANNING_DAYS; i++) {
+    const date = addDays(b.startDay, i);
+    const spentByThen = sumOf(s.expenses.filter((e) => e.spentOn <= date).map((e) => e.amount));
+    points.push({ date, planned: Math.round((b.total * i) / PLANNING_DAYS), spent: date <= today ? spentByThen : null });
+  }
+  return points;
+}
+
+// Sponsor money that has actually arrived, compared with what has been spent.
+export function sponsorSummary(s: EventState) {
+  const paid = sumOf(s.sponsors.filter((x) => x.status === "Paid").map((x) => x.amount));
+  const pending = sumOf(s.sponsors.filter((x) => x.status === "Pending").map((x) => x.amount));
+  const spent = sumOf(s.budget.map((x) => x.spent));
+  return { paid, pending, spent, net: paid - spent };
+}
 
 /*
   READINESS SCORE (0-100) = weighted average of four parts:
@@ -163,6 +227,16 @@ export function attentionItems(s: EventState, now: number): AttentionItem[] {
         to: "/admin/budget",
       });
   });
+
+  const bs = budgetSummary(s, now);
+  if (bs.forecast !== null && bs.forecast > bs.total)
+    items.push({
+      id: "bud-forecast",
+      tone: "warning",
+      title: `On pace to overspend by ${rupeesText(bs.forecast - bs.total)}`,
+      detail: "Spending so far, continued at the same pace, passes the total budget",
+      to: "/admin/budget",
+    });
 
   s.resources
     .filter((r) => r.status === "Pending")
