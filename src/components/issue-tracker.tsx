@@ -58,7 +58,7 @@ export function IssueTracker() {
             >
               <p className="min-w-0 flex-1 text-sm font-medium leading-snug">{i.title}</p>
               <StatusBadge tone={severityTone[i.severity]}>{i.severity}</StatusBadge>
-              <Button size="sm" variant="outline" onClick={() => resolveIssue(i.id)}>
+              <Button size="sm" variant="outline" disabled={i.id < 0} onClick={() => resolveIssue(i.id)}>
                 <CheckCircle2 /> Resolve
               </Button>
             </div>

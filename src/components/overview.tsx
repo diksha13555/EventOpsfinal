@@ -1,4 +1,4 @@
-import { CheckCircle2, ClipboardCheck, Clock, IndianRupee } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Clock, IndianRupee, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { EVENT_NAME } from "@/lib/event-data";
 import { countdown, quickStats, timeAgo } from "@/lib/event-selectors";
 import { useEventStore } from "@/lib/event-store";
 import { PageHeader, StatusBadge, StatusDot, type Tone } from "./admin-ui";
@@ -21,18 +20,27 @@ const runSheet = [
   { label: "Green room stocked", done: false },
 ];
 
-const sponsors: { name: string; state: string; tone: Tone }[] = [
-  { name: "Lumen Energy", state: "Paid", tone: "success" },
-  { name: "Pulse Audio", state: "Paid", tone: "success" },
-  { name: "Metro Eats", state: "Due Friday", tone: "warning" },
-];
-
 export function Overview() {
-  const { state, now } = useEventStore();
-  const [dialog, setDialog] = useState<null | "runsheet" | "sponsors">(null);
+  const { state, now, resetDemo } = useEventStore();
+  const [dialog, setDialog] = useState<null | "runsheet" | "sponsors" | "reset">(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetFailed, setResetFailed] = useState(false);
   const [checks, setChecks] = useState(runSheet.map((r) => r.done));
   const close = (isOpen: boolean) => {
     if (!isOpen) setDialog(null);
+  };
+
+  const secured = state.sponsors.filter((x) => x.status === "Paid").reduce((sum, x) => sum + x.amount, 0);
+  const pendingMoney = state.sponsors.filter((x) => x.status === "Pending").reduce((sum, x) => sum + x.amount, 0);
+  const rupees = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+
+  const doReset = async () => {
+    setResetting(true);
+    setResetFailed(false);
+    const ok = await resetDemo();
+    setResetting(false);
+    if (ok) setDialog(null);
+    else setResetFailed(true);
   };
 
   const q = quickStats(state);
@@ -54,7 +62,7 @@ export function Overview() {
     <>
       <PageHeader
         title="Overview"
-        description={`${EVENT_NAME} — where things stand right now.`}
+        description={`${state.eventName} — where things stand right now.`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setDialog("runsheet")}>
@@ -62,6 +70,9 @@ export function Overview() {
             </Button>
             <Button variant="outline" onClick={() => setDialog("sponsors")}>
               <IndianRupee /> Sponsor pulse
+            </Button>
+            <Button variant="ghost" onClick={() => setDialog("reset")}>
+              <RotateCcw /> Reset demo data
             </Button>
           </div>
         }
@@ -166,22 +177,52 @@ export function Overview() {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-md border border-border p-4">
                 <p className="text-sm text-muted-foreground">Secured</p>
-                <p className="font-display text-2xl font-bold tabular-nums">₹4,20,000</p>
+                <p className="font-display text-2xl font-bold tabular-nums">{rupees(secured)}</p>
               </div>
               <div className="rounded-md border border-border p-4">
                 <p className="text-sm text-muted-foreground">Pending</p>
-                <p className="font-display text-2xl font-bold tabular-nums">₹64,000</p>
+                <p className="font-display text-2xl font-bold tabular-nums">{rupees(pendingMoney)}</p>
               </div>
             </div>
-            {sponsors.map((s) => (
+            {state.sponsors.map((s) => (
               <div
-                key={s.name}
+                key={s.id}
                 className="flex items-center justify-between rounded-md border border-border p-3"
               >
-                <p className="text-sm font-medium">{s.name}</p>
-                <StatusBadge tone={s.tone}>{s.state}</StatusBadge>
+                <div>
+                  <p className="text-sm font-medium">{s.name}</p>
+                  <p className="text-xs text-muted-foreground tabular-nums">{rupees(s.amount)}</p>
+                </div>
+                <StatusBadge tone={s.status === "Paid" ? "success" : "warning"}>
+                  {s.note || s.status}
+                </StatusBadge>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    
+      <Dialog open={dialog === "reset"} onOpenChange={(o) => !resetting && close(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset demo data?</DialogTitle>
+            <DialogDescription>
+              This deletes every task, booking, issue, expense and activity entry, and loads fresh sample
+              data with dates counted from today. Use it to get the demo back to a clean start.
+            </DialogDescription>
+          </DialogHeader>
+          {resetFailed && (
+            <p role="alert" className="text-sm text-destructive">
+              The reset did not work. Nothing was changed. Please try again.
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" disabled={resetting} onClick={() => setDialog(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={resetting} onClick={doReset}>
+              {resetting ? "Resetting…" : "Yes, reset everything"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

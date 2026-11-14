@@ -1,4 +1,6 @@
-// Creates the tables and adds the starter data.   Run with:  npm run db:setup
+// Creates the tables and adds the starter data.
+//   npm run db:setup    creates what is missing and adds sample data if the database is empty
+//   npm run db:reset    deletes ALL event data and loads fresh sample data (dates counted from today)
 import { existsSync, readFileSync } from "node:fs";
 import pg from "pg";
 
@@ -15,16 +17,23 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+const reset = process.argv.includes("--reset");
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 30_000 });
 
 try {
   await client.connect();
   await client.query("begin");
   await client.query(readFileSync("db/schema.sql", "utf8"));
+  if (reset) await client.query(readFileSync("db/reset.sql", "utf8"));
   await client.query(readFileSync("db/seed.sql", "utf8"));
   await client.query("commit");
-  const { rows } = await client.query("select name from events order by id");
-  console.log(`Done. The database is ready. Events stored: ${rows.map((r) => r.name).join(", ")}`);
+
+  const count = async (table) => (await client.query(`select count(*)::int as n from ${table}`)).rows[0].n;
+  const parts = [];
+  for (const t of ["tasks", "resources", "issues", "budget_categories", "expenses", "sponsors", "schedule_items", "activity"])
+    parts.push(`${t}: ${await count(t)}`);
+  console.log(`Done. The database is ready${reset ? " (all data was reset)" : ""}.`);
+  console.log(parts.join(" | "));
 } catch (err) {
   await client.query("rollback").catch(() => {});
   console.error("Setup failed:", err.message);

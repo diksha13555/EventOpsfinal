@@ -64,7 +64,7 @@ export function TaskBoard() {
                     <button
                       key={t.id}
                       type="button"
-                      disabled={stage === "Done"}
+                      disabled={stage === "Done" || t.id < 0}
                       onClick={() => moveTask(t.id)}
                       className="panel p-3 text-left transition-colors enabled:hover:border-primary/50 disabled:cursor-default"
                     >
@@ -81,6 +81,7 @@ export function TaskBoard() {
                       <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                         <StatusDot tone={priorityTone[t.priority]} className="h-1.5 w-1.5" />
                         {t.priority}
+                        {t.id < 0 && <span className="ml-auto">Saving…</span>}
                       </p>
                     </button>
                   );

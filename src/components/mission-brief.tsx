@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { CheckCircle2, ChevronRight } from "lucide-react";
-import { EVENT_NAME } from "@/lib/event-data";
 import { attentionItems, countdown, readinessBreakdown } from "@/lib/event-selectors";
 import { useEventStore } from "@/lib/event-store";
 import { useCountUp } from "@/lib/use-count-up";
@@ -77,7 +76,7 @@ export function MissionBrief() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border px-6 py-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">Mission brief</p>
-          <h2 className="text-xl font-bold">{EVENT_NAME}</h2>
+          <h2 className="text-xl font-bold">{state.eventName}</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {live
               ? "The event is live."

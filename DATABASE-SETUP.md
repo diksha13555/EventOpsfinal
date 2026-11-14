@@ -61,6 +61,19 @@ When the live page shows the green message, the website and the database are con
 
 ---
 
+## The real tables (Step 5B)
+
+The dashboard now saves everything in the database, so a task you move stays moved after a refresh, on any device.
+
+- **Nothing to set up by hand.** The first time the website loads data, it creates any missing tables and adds the sample data by itself. On Vercel, just push your code and open the site. The very first load can take 10 to 20 seconds (the free database wakes up and the tables are created). After that it is fast.
+- **Your changes are never wiped by that setup.** It only adds what is missing.
+- **Reset button.** On the Overview page, "Reset demo data" deletes all event data and loads fresh sample data, with dates counted from today. Use it before a demo. It asks you to confirm.
+- **On your own computer** (needs the phone hotspot if your router refuses to look up Neon), two optional commands:
+  - `npm run db:setup` creates what is missing (safe to repeat).
+  - `npm run db:reset` deletes ALL event data and loads fresh sample data.
+
+---
+
 ## If the page shows a red message
 
 | Message | What to do |
@@ -68,8 +81,8 @@ When the live page shows the green message, the website and the database are con
 | The server has no DATABASE_URL | Locally: check the `.env` file and restart `npm run dev`. On Vercel: add the variable, then redeploy. |
 | The database refused the username or password | Copy the connection string from Neon again and paste the whole thing. |
 | Could not reach the database server | Check the string for typos. Wait a few seconds and press "Check again", because the database may still be waking up. |
-| Connected, but the tables do not exist yet | Run `npm run db:setup` once. |
-| Something unexpected | Look at the terminal (local) or Vercel **Logs** (live) for details, and send them to Claude. |
+| Connected, but the tables do not exist yet | The website normally creates them by itself. If this message stays, run `npm run db:setup` once. |
+| Something unexpected | Look at the terminal (local) or Vercel **Logs** (live) for details, and share them with the team. |
 
 ## Good to know
 

@@ -8,10 +8,11 @@ import {
   Menu,
   Wallet,
   X,
+  XCircle,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EVENT_NAME } from "@/lib/event-data";
 import { useEventStore } from "@/lib/event-store";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -55,6 +56,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function SidebarFooter() {
+  const { state } = useEventStore();
   return (
     <div className="flex items-center gap-3 border-t border-border px-3 pt-4">
       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold">
@@ -62,16 +64,30 @@ function SidebarFooter() {
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">Administrator</p>
-        <p className="truncate text-xs text-muted-foreground">{EVENT_NAME}</p>
+        <p className="truncate text-xs text-muted-foreground">{state.eventName || "EventOps"}</p>
       </div>
     </div>
   );
 }
 
-// Shows a grey placeholder until the demo data has loaded in the browser.
+// Shows a grey placeholder while the data loads, or a clear message if the database cannot be reached.
 function Gate({ children }: { children: ReactNode }) {
-  const { state } = useEventStore();
+  const { state, loadError, retryLoad } = useEventStore();
   if (state.ready) return <>{children}</>;
+
+  if (loadError)
+    return (
+      <section className="panel mx-auto max-w-xl p-6" role="alert">
+        <p className="flex items-center gap-2 font-semibold">
+          <XCircle className="h-5 w-5 text-destructive" /> {loadError.problem}
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{loadError.hint}</p>
+        <Button variant="outline" size="sm" className="mt-5" onClick={retryLoad}>
+          Try again
+        </Button>
+      </section>
+    );
+
   return (
     <div aria-hidden className="grid gap-4">
       <Skeleton className="h-10 w-48" />
@@ -81,8 +97,26 @@ function Gate({ children }: { children: ReactNode }) {
   );
 }
 
+// A dismissible banner shown when a change could not be saved.
+function SaveErrorBanner() {
+  const { saveError, dismissSaveError } = useEventStore();
+  if (!saveError) return null;
+  return (
+    <div
+      role="alert"
+      className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-destructive/50 bg-card p-3 text-sm"
+    >
+      <p>{saveError}</p>
+      <button type="button" onClick={dismissSaveError} className="shrink-0 font-medium underline">
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 export function AdminShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const { state, saving } = useEventStore();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -134,8 +168,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
           >
             <Menu className="h-4 w-4" />
           </button>
-          <p className="text-sm font-semibold">{EVENT_NAME}</p>
+          <p className="text-sm font-semibold">{state.eventName || "EventOps"}</p>
           <div className="ml-auto flex items-center gap-2">
+            {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
             <span className="hidden rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground sm:inline">
               Admin
             </span>
@@ -143,6 +178,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+          <SaveErrorBanner />
           <Gate>{children}</Gate>
         </main>
       </div>
