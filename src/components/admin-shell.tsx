@@ -13,6 +13,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Toaster } from "@/components/ui/sonner";
 import { useEventStore } from "@/lib/event-store";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -120,6 +121,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <Toaster position="bottom-right" />
       {/* Sidebar: always visible on large screens */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col gap-6 border-r border-border bg-card py-5 lg:flex">
         <Brand />

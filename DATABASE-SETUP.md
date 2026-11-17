@@ -74,6 +74,17 @@ The dashboard now saves everything in the database, so a task you move stays mov
 
 ---
 
+## Accounts and team tables
+
+- The shared **`users`** table (accounts and roles) is created automatically, together with a few demo accounts. It is defined in `db/schema.d/20-users.sql`.
+- **Each teammate adds their own tables in their own file**, so nobody edits the same file:
+  `db/schema.d/30-participant.sql` for tables and `db/seed.d/30-participant.sql` for sample data. No code changes are needed, and the files run in file-name order.
+- The setup runs by itself whenever the website server starts, so new tables reach the live database after a deploy.
+- **Reset demo data never deletes accounts.**
+- Full rules and examples are in `docs/TEAM-GUIDE.md`.
+
+---
+
 ## If the page shows a red message
 
 | Message | What to do |

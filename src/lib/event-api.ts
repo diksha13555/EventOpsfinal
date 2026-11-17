@@ -29,11 +29,11 @@ export const addTaskApi = createServerFn({ method: "POST" })
     return s.safely(() => s.createTask(data.title, data.priority, data.due));
   });
 
-export const setTaskStatusApi = createServerFn({ method: "POST" })
-  .validator(z.object({ id, status }))
+export const moveTaskApi = createServerFn({ method: "POST" })
+  .validator(z.object({ id, status, index: z.number().int().min(0).max(1000), reason: z.string().trim().max(200).optional() }))
   .handler(async ({ data }): Promise<ApiResult> => {
     const s = await import("../server/event.server");
-    return s.safely(() => s.setTaskStatus(data.id, data.status));
+    return s.safely(() => s.moveTask(data.id, data.status, data.index, data.reason));
   });
 
 export const addIssueApi = createServerFn({ method: "POST" })

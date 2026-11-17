@@ -11,6 +11,7 @@ export type Task = {
   due: string; // "YYYY-MM-DD", or "" when no date
   priority: Priority;
   status: TaskStatus;
+  blockedReason: string; // why it is blocked ("" when it is not)
 };
 
 export type ResourceStatus = "Booked" | "Pending" | "Conflict" | "Free";

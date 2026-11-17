@@ -2,10 +2,9 @@
 // The ".server.ts" name keeps this file (and the secret connection) out of the browser.
 import type { Pool, PoolClient } from "pg";
 import resetSql from "../../db/reset.sql?raw";
-import schemaSql from "../../db/schema.sql?raw";
-import seedSql from "../../db/seed.sql?raw";
 import type { EventData, Priority, Severity, TaskStatus } from "../lib/event-data";
 import { getPool } from "./db.server";
+import { schemaSql, seedSql } from "./sql.server";
 
 export type ApiProblem = { problem: string; hint: string };
 export type ApiResult = { ok: true; data: EventData } | ({ ok: false } & ApiProblem);
@@ -33,6 +32,8 @@ export function describeError(err: unknown): ApiProblem {
       problem: "Could not reach the database server.",
       hint: "Try again in a few seconds in case the database is still waking up.",
     };
+  if (e.message === "REASON_REQUIRED")
+    return { problem: "Please say why the task is blocked.", hint: "Blocked tasks need a short reason." };
   if (e.message === "NOT_FOUND")
     return { problem: "That item no longer exists.", hint: "The page has been refreshed with the latest data." };
   return {
@@ -72,13 +73,30 @@ export async function ensureSetup(): Promise<void> {
   }
 }
 
-// Reads everything the dashboard needs. If the tables are missing (brand-new database), sets them up first.
+// Runs the setup once per server start, so a new table or column added by any teammate
+// reaches the live database by itself after a deploy. If a setup SQL file has a mistake,
+// it is logged and the app keeps working with the tables it already has; connection and
+// password problems are NOT swallowed, so they show a clear message immediately.
+let setupOnce: Promise<void> | undefined;
+function ensureSetupOnce(): Promise<void> {
+  setupOnce ??= ensureSetup().catch((err: unknown) => {
+    setupOnce = undefined; // try again on the next request
+    const code = (err as { code?: string }).code ?? "";
+    const isSqlError = /^[0-9A-Z]{5}$/.test(code) && code !== "28P01" && code !== "28000";
+    if (!isSqlError) throw err;
+    console.error("[setup] a setup SQL file failed; continuing with the existing tables:", err);
+  });
+  return setupOnce;
+}
+
+// Reads everything the dashboard needs, setting up any missing tables first.
 export async function loadEventData(db: Db = getPool()): Promise<EventData> {
+  await ensureSetupOnce();
   try {
     return await readEventData(db);
   } catch (err) {
     if ((err as { code?: string }).code !== "42P01") throw err;
-    await ensureSetup();
+    await ensureSetup(); // the tables were removed while the server was running
     return readEventData(db);
   }
 }
@@ -90,9 +108,10 @@ async function readEventData(db: Db): Promise<EventData> {
               issues_resolved_before as resolved_before
          from events order by id limit 1`,
     ),
-    db.query<{ id: number; title: string; owner: string; due: string; priority: Priority; status: TaskStatus }>(
-      `select id, title, owner, coalesce(to_char(due, 'YYYY-MM-DD'), '') as due, priority, status
-         from tasks order by id`,
+    db.query<{ id: number; title: string; owner: string; due: string; priority: Priority; status: TaskStatus; blockedReason: string }>(
+      `select id, title, owner, coalesce(to_char(due, 'YYYY-MM-DD'), '') as due, priority, status,
+              blocked_reason as "blockedReason"
+         from tasks order by position nulls last, id`,
     ),
     db.query<{ id: number; name: string; kind: "venue" | "gear"; slot: string; status: "Booked" | "Pending" | "Conflict" | "Free" }>(
       `select id, name, kind, slot, status from resources order by id`,
@@ -171,19 +190,48 @@ const log = (c: PoolClient, eventId: number, text: string) =>
 export const createTask = (title: string, priority: Priority, due: string) =>
   change(async (c, eventId) => {
     await c.query(
-      `insert into tasks (event_id, title, owner, due, priority, status)
-       values ($1, $2, 'You', nullif($3, '')::date, $4, 'Backlog')`,
+      `insert into tasks (event_id, title, owner, due, priority, status, position)
+       values ($1, $2, 'You', nullif($3, '')::date, $4, 'Backlog',
+               (select coalesce(max(position), 0) + 1 from tasks where status = 'Backlog'))`,
       [eventId, title, due, priority],
     );
     await log(c, eventId, `Task added: ${title}`);
   });
 
-export const setTaskStatus = (id: number, status: TaskStatus) =>
+// Moves a card to a column and an exact place in it. `index` counts among the OTHER cards of that
+// column (0 = top). Moving into Blocked needs a reason; leaving Blocked clears it.
+export const moveTask = (id: number, status: TaskStatus, index: number, reason?: string) =>
   change(async (c, eventId) => {
-    const r = await c.query<{ title: string }>("update tasks set status = $2 where id = $1 returning title", [id, status]);
-    const task = r.rows[0];
+    await c.query("select pg_advisory_xact_lock(727275)"); // one card move at a time, so places never clash
+    const cur = await c.query<{ title: string; status: TaskStatus; blocked_reason: string }>(
+      "select title, status, blocked_reason from tasks where id = $1 for update",
+      [id],
+    );
+    const task = cur.rows[0];
     if (!task) throw new Error("NOT_FOUND");
-    await log(c, eventId, `${task.title} moved to ${status}`);
+
+    let newReason = "";
+    if (status === "Blocked") {
+      newReason = (reason ?? "").trim() || (task.status === "Blocked" ? task.blocked_reason : "");
+      if (!newReason) throw new Error("REASON_REQUIRED");
+    }
+
+    const others = await c.query<{ id: number }>(
+      "select id from tasks where status = $1 and id <> $2 order by position nulls last, id",
+      [status, id],
+    );
+    const order = others.rows.map((r) => r.id);
+    order.splice(Math.max(0, Math.min(index, order.length)), 0, id);
+
+    await c.query("update tasks set status = $2, blocked_reason = $3 where id = $1", [id, status, newReason]);
+    await c.query(
+      `update tasks t set position = u.ord
+         from unnest($1::int[]) with ordinality as u(id, ord)
+        where t.id = u.id`,
+      [order],
+    );
+    if (status !== task.status)
+      await log(c, eventId, `${task.title} moved to ${status}${status === "Blocked" ? ` (${newReason})` : ""}`);
   });
 
 export const createExpense = (categoryId: number, amount: number, note: string, spentOn: string) =>

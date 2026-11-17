@@ -199,7 +199,7 @@ export function attentionItems(s: EventState, now: number): AttentionItem[] {
         id: `blk-${t.id}`,
         tone: "danger",
         title: `${t.title} is blocked`,
-        detail: `Owner: ${t.owner}`,
+        detail: `${t.blockedReason ? `${t.blockedReason} · ` : ""}Owner: ${t.owner}`,
         to: "/admin/tasks",
       }),
     );

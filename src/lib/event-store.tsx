@@ -15,18 +15,19 @@ import {
   addTaskApi,
   getEventData,
   resetDemoDataApi,
+  moveTaskApi,
   resolveIssueApi,
-  setTaskStatusApi,
   type ApiResult,
 } from "./event-api";
 import {
   EMPTY_STATE,
-  TASK_STAGES,
   type EventData,
   type EventState,
   type Priority,
   type Severity,
+  type TaskStatus,
 } from "./event-data";
+import { placeTask } from "./task-order";
 
 /*
   How data flows:
@@ -39,7 +40,7 @@ import {
 type Action =
   | { type: "replace"; data: EventData }
   | { type: "add_task"; title: string; priority: Priority; due: string; now: number }
-  | { type: "move_task"; id: number; now: number }
+  | { type: "move_task"; id: number; status: TaskStatus; index: number; reason: string; now: number }
   | { type: "add_expense"; categoryId: number; amount: number; note: string; spentOn: string; now: number }
   | { type: "add_issue"; title: string; severity: Severity; now: number }
   | { type: "resolve_issue"; id: number; now: number };
@@ -67,6 +68,7 @@ function reducer(state: EventState, action: Action): EventState {
             due: action.due,
             priority: action.priority,
             status: "Backlog",
+            blockedReason: "",
           },
         ],
         activity: log(state, `Task added: ${action.title}`, action.now),
@@ -75,13 +77,10 @@ function reducer(state: EventState, action: Action): EventState {
     case "move_task": {
       const task = state.tasks.find((t) => t.id === action.id);
       if (!task) return state;
-      const next = TASK_STAGES[TASK_STAGES.indexOf(task.status) + 1]; // Done has no next stage
-      if (!next) return state;
-      return {
-        ...state,
-        tasks: state.tasks.map((t) => (t.id === task.id ? { ...t, status: next } : t)),
-        activity: log(state, `${task.title} moved to ${next}`, action.now),
-      };
+      const tasks = placeTask(state.tasks, action.id, action.status, action.index, action.reason);
+      if (action.status === task.status) return { ...state, tasks }; // only reordered: nothing to log
+      const why = action.status === "Blocked" ? ` (${tasks.find((t) => t.id === task.id)?.blockedReason ?? ""})` : "";
+      return { ...state, tasks, activity: log(state, `${task.title} moved to ${action.status}${why}`, action.now) };
     }
 
     case "add_expense": {
@@ -131,7 +130,7 @@ type Store = {
   retryLoad: () => void;
   dismissSaveError: () => void;
   addTask: (title: string, priority: Priority, due: string) => void;
-  moveTask: (id: number) => void;
+  moveTask: (id: number, status: TaskStatus, index: number, reason?: string) => void;
   addIssue: (title: string, severity: Severity) => void;
   addExpense: (categoryId: number, amount: number, note: string, spentOn: string) => void;
   resolveIssue: (id: number) => void;
@@ -225,13 +224,11 @@ export function EventStoreProvider({ children }: { children: ReactNode }) {
         void persist(() => addTaskApi({ data: { title, priority, due } }));
       },
 
-      moveTask: (id) => {
+      moveTask: (id, status, index, reason) => {
         const task = state.tasks.find((t) => t.id === id);
         if (!task || id < 0) return; // still being saved
-        const next = TASK_STAGES[TASK_STAGES.indexOf(task.status) + 1];
-        if (!next) return;
-        dispatch({ type: "move_task", id, now: Date.now() });
-        void persist(() => setTaskStatusApi({ data: { id, status: next } }));
+        dispatch({ type: "move_task", id, status, index, reason: reason ?? "", now: Date.now() });
+        void persist(() => moveTaskApi({ data: { id, status, index, ...(reason ? { reason } : {}) } }));
       },
 
       addExpense: (categoryId, amount, note, spentOn) => {

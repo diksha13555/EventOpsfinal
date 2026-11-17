@@ -10,7 +10,7 @@ export const Route = createFileRoute("/admin/tasks")({
 function TasksPage() {
   return (
     <>
-      <PageHeader title="Tasks" description="Click a card to move it to the next stage." />
+      <PageHeader title="Tasks" description="Drag cards between stages, and up or down to set their order." />
       <TaskBoard />
     </>
   );
