@@ -1,0 +1,19 @@
+STEP 5C (PART 4): TASK NOTES + PLANNED SHIFTS
+(No new packages, so no npm install is needed. 15 files: 4 new, 11 changed.)
+This builds on the previous zips (login, volunteer module, volunteer extras). Paste those first if you have not.
+
+1. Unzip this file. You get a folder called  eventops-step8-notes-shifts.
+2. Open that folder. Select EVERYTHING inside it (the folders db and src and the
+   file NOTES-AND-SHIFTS.md) and copy it.
+   Do NOT paste READ-ME-FIRST.txt into the project (it is only these notes).
+3. Paste it into your project folder (the one with package.json and the hidden .git folder).
+   Choose "Replace the files in the destination".
+   Tip first:  git add .  then  git commit -m "Before notes and shifts"
+4. In the VS Code terminal:   npm run dev
+   Open the site and follow "How to try it" in NOTES-AND-SHIFTS.md.
+   The first load takes a few seconds: the site adds two new tables by itself.
+5. Upload:
+     git status        (about 15 files; .env must NOT be listed)
+     git add .
+     git commit -m "Add task notes and planned shifts"
+     git push

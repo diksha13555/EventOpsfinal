@@ -2,9 +2,10 @@
 // The ".server.ts" name keeps this file (and the secret connection) out of the browser.
 import type { Pool, PoolClient } from "pg";
 import resetSql from "../../db/reset.sql?raw";
+import schemaSql from "../../db/schema.sql?raw";
+import seedSql from "../../db/seed.sql?raw";
 import type { EventData, Priority, Severity, TaskStatus } from "../lib/event-data";
 import { getPool } from "./db.server";
-import { schemaSql, seedSql } from "./sql.server";
 
 export type ApiProblem = { problem: string; hint: string };
 export type ApiResult = { ok: true; data: EventData } | ({ ok: false } & ApiProblem);
@@ -32,8 +33,25 @@ export function describeError(err: unknown): ApiProblem {
       problem: "Could not reach the database server.",
       hint: "Try again in a few seconds in case the database is still waking up.",
     };
-  if (e.message === "REASON_REQUIRED")
-    return { problem: "Please say why the task is blocked.", hint: "Blocked tasks need a short reason." };
+  if (e.message === "TASK_CHANGED")
+    return {
+      problem: "That task was changed by someone else.",
+      hint: "Your list has been refreshed. Check it and try again.",
+    };
+  if (e.message === "NOTE_REQUIRED")
+    return { problem: "Say what is blocking you.", hint: "Add a short reason so the administrator can help." };
+  if (e.message === "NOTE_EMPTY")
+    return { problem: "Write a note first.", hint: "A note can be up to 500 characters." };
+  if (e.message === "SLOT_OVERLAP")
+    return { problem: "That overlaps another shift for this volunteer.", hint: "Pick a different time or remove the other shift first." };
+  if (e.message === "SHIFT_INVALID")
+    return { problem: "Those shift times do not work.", hint: "Pick an end time after the start, for at most 16 hours." };
+  if (e.message === "ALREADY_ON_DUTY")
+    return { problem: "You are already checked in.", hint: "Your screen has been refreshed." };
+  if (e.message === "NOT_ON_DUTY")
+    return { problem: "You are not checked in.", hint: "Your screen has been refreshed." };
+  if (e.message === "INVALID_VOLUNTEER")
+    return { problem: "That person is not a volunteer.", hint: "Pick someone from the volunteer list." };
   if (e.message === "NOT_FOUND")
     return { problem: "That item no longer exists.", hint: "The page has been refreshed with the latest data." };
   return {
@@ -73,45 +91,34 @@ export async function ensureSetup(): Promise<void> {
   }
 }
 
-// Runs the setup once per server start, so a new table or column added by any teammate
-// reaches the live database by itself after a deploy. If a setup SQL file has a mistake,
-// it is logged and the app keeps working with the tables it already has; connection and
-// password problems are NOT swallowed, so they show a clear message immediately.
-let setupOnce: Promise<void> | undefined;
-function ensureSetupOnce(): Promise<void> {
-  setupOnce ??= ensureSetup().catch((err: unknown) => {
-    setupOnce = undefined; // try again on the next request
-    const code = (err as { code?: string }).code ?? "";
-    const isSqlError = /^[0-9A-Z]{5}$/.test(code) && code !== "28P01" && code !== "28000";
-    if (!isSqlError) throw err;
-    console.error("[setup] a setup SQL file failed; continuing with the existing tables:", err);
-  });
-  return setupOnce;
-}
-
-// Reads everything the dashboard needs, setting up any missing tables first.
-export async function loadEventData(db: Db = getPool()): Promise<EventData> {
-  await ensureSetupOnce();
+// Runs some read. If tables are missing (new database) or a newer column is missing (older database),
+// runs the safe setup once and tries again. Used by every screen that reads event data.
+export async function withEventSetup<T>(work: () => Promise<T>): Promise<T> {
   try {
-    return await readEventData(db);
+    return await work();
   } catch (err) {
-    if ((err as { code?: string }).code !== "42P01") throw err;
-    await ensureSetup(); // the tables were removed while the server was running
-    return readEventData(db);
+    const code = (err as { code?: string }).code;
+    if (code !== "42P01" && code !== "42703") throw err;
+    await ensureSetup();
+    return work();
   }
 }
 
+// Reads everything the dashboard needs. If the database is new or out of date, sets it up first.
+export async function loadEventData(db: Db = getPool()): Promise<EventData> {
+  return withEventSetup(() => readEventData(db));
+}
+
 async function readEventData(db: Db): Promise<EventData> {
-  const [ev, tasks, resources, issues, budget, expenses, sponsors, schedule, activity] = await Promise.all([
+  const [ev, tasks, resources, issues, budget, sponsors, schedule, activity] = await Promise.all([
     db.query<{ name: string; start_ms: number; resolved_before: number }>(
       `select name, floor(extract(epoch from starts_at) * 1000)::float8 as start_ms,
               issues_resolved_before as resolved_before
          from events order by id limit 1`,
     ),
-    db.query<{ id: number; title: string; owner: string; due: string; priority: Priority; status: TaskStatus; blockedReason: string }>(
-      `select id, title, owner, coalesce(to_char(due, 'YYYY-MM-DD'), '') as due, priority, status,
-              blocked_reason as "blockedReason"
-         from tasks order by position nulls last, id`,
+    db.query<{ id: number; title: string; owner: string; due: string; priority: Priority; status: TaskStatus; note: string }>(
+      `select id, title, owner, coalesce(to_char(due, 'YYYY-MM-DD'), '') as due, priority, status, note
+         from tasks order by id`,
     ),
     db.query<{ id: number; name: string; kind: "venue" | "gear"; slot: string; status: "Booked" | "Pending" | "Conflict" | "Free" }>(
       `select id, name, kind, slot, status from resources order by id`,
@@ -124,11 +131,6 @@ async function readEventData(db: Db): Promise<EventData> {
       `select c.id, c.head, c.planned_amount as total, coalesce(sum(e.amount), 0)::int as spent
          from budget_categories c left join expenses e on e.category_id = c.id
         group by c.id order by c.id`,
-    ),
-    // Newest ENTRY first (not newest date), so an expense you just added is always at the top.
-    db.query<{ id: number; categoryId: number; amount: number; note: string; spentOn: string }>(
-      `select id, category_id as "categoryId", amount, note, to_char(spent_on, 'YYYY-MM-DD') as "spentOn"
-         from expenses order by id desc limit 100`,
     ),
     db.query<{ id: number; name: string; amount: number; status: "Paid" | "Pending"; note: string }>(
       `select id, name, amount, status, note from sponsors order by id`,
@@ -154,7 +156,6 @@ async function readEventData(db: Db): Promise<EventData> {
     resources: resources.rows,
     issues: issues.rows,
     budget: budget.rows,
-    expenses: expenses.rows,
     sponsors: sponsors.rows,
     schedule: schedule.rows,
     activity: activity.rows,
@@ -181,71 +182,29 @@ async function change(work: (c: PoolClient, eventId: number) => Promise<void>): 
   return loadEventData(pool);
 }
 
-// "₹50,000" in the Indian digit grouping (50,000 / 1,48,000).
-export const rupeeText = (n: number) => `₹${n.toLocaleString("en-IN")}`;
-
 const log = (c: PoolClient, eventId: number, text: string) =>
   c.query("insert into activity (event_id, text) values ($1, $2)", [eventId, text]);
 
 export const createTask = (title: string, priority: Priority, due: string) =>
   change(async (c, eventId) => {
     await c.query(
-      `insert into tasks (event_id, title, owner, due, priority, status, position)
-       values ($1, $2, 'You', nullif($3, '')::date, $4, 'Backlog',
-               (select coalesce(max(position), 0) + 1 from tasks where status = 'Backlog'))`,
+      `insert into tasks (event_id, title, owner, due, priority, status)
+       values ($1, $2, 'You', nullif($3, '')::date, $4, 'Backlog')`,
       [eventId, title, due, priority],
     );
     await log(c, eventId, `Task added: ${title}`);
   });
 
-// Moves a card to a column and an exact place in it. `index` counts among the OTHER cards of that
-// column (0 = top). Moving into Blocked needs a reason; leaving Blocked clears it.
-export const moveTask = (id: number, status: TaskStatus, index: number, reason?: string) =>
+export const setTaskStatus = (id: number, status: TaskStatus) =>
   change(async (c, eventId) => {
-    await c.query("select pg_advisory_xact_lock(727275)"); // one card move at a time, so places never clash
-    const cur = await c.query<{ title: string; status: TaskStatus; blocked_reason: string }>(
-      "select title, status, blocked_reason from tasks where id = $1 for update",
-      [id],
+    const r = await c.query<{ title: string }>(
+      `update tasks set status = $2, note = case when $2::text = 'Blocked' then note else '' end, updated_at = now()
+        where id = $1 returning title`,
+      [id, status],
     );
-    const task = cur.rows[0];
+    const task = r.rows[0];
     if (!task) throw new Error("NOT_FOUND");
-
-    let newReason = "";
-    if (status === "Blocked") {
-      newReason = (reason ?? "").trim() || (task.status === "Blocked" ? task.blocked_reason : "");
-      if (!newReason) throw new Error("REASON_REQUIRED");
-    }
-
-    const others = await c.query<{ id: number }>(
-      "select id from tasks where status = $1 and id <> $2 order by position nulls last, id",
-      [status, id],
-    );
-    const order = others.rows.map((r) => r.id);
-    order.splice(Math.max(0, Math.min(index, order.length)), 0, id);
-
-    await c.query("update tasks set status = $2, blocked_reason = $3 where id = $1", [id, status, newReason]);
-    await c.query(
-      `update tasks t set position = u.ord
-         from unnest($1::int[]) with ordinality as u(id, ord)
-        where t.id = u.id`,
-      [order],
-    );
-    if (status !== task.status)
-      await log(c, eventId, `${task.title} moved to ${status}${status === "Blocked" ? ` (${newReason})` : ""}`);
-  });
-
-export const createExpense = (categoryId: number, amount: number, note: string, spentOn: string) =>
-  change(async (c, eventId) => {
-    const cat = await c.query<{ head: string }>("select head from budget_categories where id = $1", [categoryId]);
-    const category = cat.rows[0];
-    if (!category) throw new Error("NOT_FOUND");
-    await c.query("insert into expenses (category_id, amount, note, spent_on) values ($1, $2, $3, $4::date)", [
-      categoryId,
-      amount,
-      note,
-      spentOn,
-    ]);
-    await log(c, eventId, `Expense added: ${rupeeText(amount)} to ${category.head}`);
+    await log(c, eventId, `${task.title} moved to ${status}`);
   });
 
 export const createIssue = (title: string, severity: Severity) =>
