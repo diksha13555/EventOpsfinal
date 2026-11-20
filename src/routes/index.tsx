@@ -1,9 +1,14 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { LoginPage } from "@/components/auth/login-page";
+import { getSessionApi } from "@/lib/auth-api";
+import { ROLE_HOME } from "@/lib/auth-types";
 
-// For now the site opens straight into the admin console.
-// Later this page becomes the login screen that sends each role to its own module.
+// The entry page. Someone who is already signed in goes straight to their own module.
 export const Route = createFileRoute("/")({
-  beforeLoad: () => {
-    throw redirect({ to: "/admin" });
+  beforeLoad: async () => {
+    const r = await getSessionApi().catch(() => null);
+    if (r?.ok && r.user) throw redirect({ to: ROLE_HOME[r.user.role] });
   },
+  head: () => ({ meta: [{ title: "Sign in · EventOps" }] }),
+  component: LoginPage,
 });

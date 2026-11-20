@@ -12,11 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DbCheckRouteImport } from './routes/db-check'
+import { Route as ParticipantRouteImport } from './routes/participant'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as VolunteerRouteImport } from './routes/volunteer'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminBudgetRouteImport } from './routes/admin.budget'
 import { Route as AdminIssuesRouteImport } from './routes/admin.issues'
 import { Route as AdminResourcesRouteImport } from './routes/admin.resources'
 import { Route as AdminTasksRouteImport } from './routes/admin.tasks'
+import { Route as AdminVolunteersRouteImport } from './routes/admin.volunteers'
+import { Route as ParticipantIndexRouteImport } from './routes/participant.index'
+import { Route as VolunteerIndexRouteImport } from './routes/volunteer.index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -31,6 +37,21 @@ const AdminRoute = AdminRouteImport.update({
 const DbCheckRoute = DbCheckRouteImport.update({
   id: '/db-check',
   path: '/db-check',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ParticipantRoute = ParticipantRouteImport.update({
+  id: '/participant',
+  path: '/participant',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VolunteerRoute = VolunteerRouteImport.update({
+  id: '/volunteer',
+  path: '/volunteer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -58,36 +79,67 @@ const AdminTasksRoute = AdminTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminVolunteersRoute = AdminVolunteersRouteImport.update({
+  id: '/volunteers',
+  path: '/volunteers',
+  getParentRoute: () => AdminRoute,
+} as any)
+const ParticipantIndexRoute = ParticipantIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ParticipantRoute,
+} as any)
+const VolunteerIndexRoute = VolunteerIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => VolunteerRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/db-check': typeof DbCheckRoute
+  '/participant': typeof ParticipantRouteWithChildren
+  '/register': typeof RegisterRoute
+  '/volunteer': typeof VolunteerRouteWithChildren
   '/admin/budget': typeof AdminBudgetRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/resources': typeof AdminResourcesRoute
   '/admin/tasks': typeof AdminTasksRoute
+  '/admin/volunteers': typeof AdminVolunteersRoute
   '/admin/': typeof AdminIndexRoute
+  '/participant/': typeof ParticipantIndexRoute
+  '/volunteer/': typeof VolunteerIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/db-check': typeof DbCheckRoute
+  '/register': typeof RegisterRoute
   '/admin/budget': typeof AdminBudgetRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/resources': typeof AdminResourcesRoute
   '/admin/tasks': typeof AdminTasksRoute
+  '/admin/volunteers': typeof AdminVolunteersRoute
   '/admin': typeof AdminIndexRoute
+  '/participant': typeof ParticipantIndexRoute
+  '/volunteer': typeof VolunteerIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/db-check': typeof DbCheckRoute
+  '/participant': typeof ParticipantRouteWithChildren
+  '/register': typeof RegisterRoute
+  '/volunteer': typeof VolunteerRouteWithChildren
   '/admin/budget': typeof AdminBudgetRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/resources': typeof AdminResourcesRoute
   '/admin/tasks': typeof AdminTasksRoute
+  '/admin/volunteers': typeof AdminVolunteersRoute
   '/admin/': typeof AdminIndexRoute
+  '/participant/': typeof ParticipantIndexRoute
+  '/volunteer/': typeof VolunteerIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -95,36 +147,55 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/db-check'
+    | '/participant'
+    | '/register'
+    | '/volunteer'
     | '/admin/budget'
     | '/admin/issues'
     | '/admin/resources'
     | '/admin/tasks'
+    | '/admin/volunteers'
     | '/admin/'
+    | '/participant/'
+    | '/volunteer/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/db-check'
+    | '/register'
     | '/admin/budget'
     | '/admin/issues'
     | '/admin/resources'
     | '/admin/tasks'
+    | '/admin/volunteers'
     | '/admin'
+    | '/participant'
+    | '/volunteer'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/db-check'
+    | '/participant'
+    | '/register'
+    | '/volunteer'
     | '/admin/budget'
     | '/admin/issues'
     | '/admin/resources'
     | '/admin/tasks'
+    | '/admin/volunteers'
     | '/admin/'
+    | '/participant/'
+    | '/volunteer/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   DbCheckRoute: typeof DbCheckRoute
+  ParticipantRoute: typeof ParticipantRouteWithChildren
+  RegisterRoute: typeof RegisterRoute
+  VolunteerRoute: typeof VolunteerRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -148,6 +219,27 @@ declare module '@tanstack/react-router' {
       path: '/db-check'
       fullPath: '/db-check'
       preLoaderRoute: typeof DbCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/participant': {
+      id: '/participant'
+      path: '/participant'
+      fullPath: '/participant'
+      preLoaderRoute: typeof ParticipantRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/volunteer': {
+      id: '/volunteer'
+      path: '/volunteer'
+      fullPath: '/volunteer'
+      preLoaderRoute: typeof VolunteerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -185,6 +277,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTasksRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/volunteers': {
+      id: '/admin/volunteers'
+      path: '/volunteers'
+      fullPath: '/admin/volunteers'
+      preLoaderRoute: typeof AdminVolunteersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/participant/': {
+      id: '/participant/'
+      path: '/'
+      fullPath: '/participant/'
+      preLoaderRoute: typeof ParticipantIndexRouteImport
+      parentRoute: typeof ParticipantRoute
+    }
+    '/volunteer/': {
+      id: '/volunteer/'
+      path: '/'
+      fullPath: '/volunteer/'
+      preLoaderRoute: typeof VolunteerIndexRouteImport
+      parentRoute: typeof VolunteerRoute
+    }
   }
 }
 
@@ -193,6 +306,7 @@ interface AdminRouteChildren {
   AdminIssuesRoute: typeof AdminIssuesRoute
   AdminResourcesRoute: typeof AdminResourcesRoute
   AdminTasksRoute: typeof AdminTasksRoute
+  AdminVolunteersRoute: typeof AdminVolunteersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -201,15 +315,43 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminIssuesRoute: AdminIssuesRoute,
   AdminResourcesRoute: AdminResourcesRoute,
   AdminTasksRoute: AdminTasksRoute,
+  AdminVolunteersRoute: AdminVolunteersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface ParticipantRouteChildren {
+  ParticipantIndexRoute: typeof ParticipantIndexRoute
+}
+
+const ParticipantRouteChildren: ParticipantRouteChildren = {
+  ParticipantIndexRoute: ParticipantIndexRoute,
+}
+
+const ParticipantRouteWithChildren = ParticipantRoute._addFileChildren(
+  ParticipantRouteChildren,
+)
+
+interface VolunteerRouteChildren {
+  VolunteerIndexRoute: typeof VolunteerIndexRoute
+}
+
+const VolunteerRouteChildren: VolunteerRouteChildren = {
+  VolunteerIndexRoute: VolunteerIndexRoute,
+}
+
+const VolunteerRouteWithChildren = VolunteerRoute._addFileChildren(
+  VolunteerRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   DbCheckRoute: DbCheckRoute,
+  ParticipantRoute: ParticipantRouteWithChildren,
+  RegisterRoute: RegisterRoute,
+  VolunteerRoute: VolunteerRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

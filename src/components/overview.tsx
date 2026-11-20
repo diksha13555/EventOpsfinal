@@ -12,6 +12,7 @@ import { countdown, quickStats, timeAgo } from "@/lib/event-selectors";
 import { useEventStore } from "@/lib/event-store";
 import { PageHeader, StatusBadge, StatusDot, type Tone } from "./admin-ui";
 import { MissionBrief } from "./mission-brief";
+import { VolunteerSummary } from "./volunteers/volunteer-summary";
 
 const runSheet = [
   { label: "Main auditorium unlocked", done: true },
@@ -90,6 +91,8 @@ export function Overview() {
           </div>
         ))}
       </div>
+
+      <VolunteerSummary />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="panel p-5">

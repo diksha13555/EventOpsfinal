@@ -5,7 +5,9 @@ import {
   CalendarCheck,
   LayoutDashboard,
   ListChecks,
+  LogOut,
   Menu,
+  Users,
   Wallet,
   X,
   XCircle,
@@ -13,8 +15,9 @@ import {
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Toaster } from "@/components/ui/sonner";
 import { useEventStore } from "@/lib/event-store";
+import { signOut, useSession } from "@/lib/session";
+import { RoleGuard } from "./auth/role-guard";
 import { ThemeToggle } from "./theme-toggle";
 
 const nav = [
@@ -23,6 +26,7 @@ const nav = [
   { label: "Resources", to: "/admin/resources", icon: Building2, exact: false },
   { label: "Issues", to: "/admin/issues", icon: AlertTriangle, exact: false },
   { label: "Budget", to: "/admin/budget", icon: Wallet, exact: false },
+  { label: "Volunteers", to: "/admin/volunteers", icon: Users, exact: false },
 ] as const;
 
 function Brand() {
@@ -58,15 +62,26 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 function SidebarFooter() {
   const { state } = useEventStore();
+  const { state: session } = useSession();
+  const user = session.status === "ready" ? session.user : null;
   return (
     <div className="flex items-center gap-3 border-t border-border px-3 pt-4">
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold">
-        A
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold">
+        {(user?.name ?? "A").charAt(0).toUpperCase()}
       </span>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">Administrator</p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{user?.name ?? "Administrator"}</p>
         <p className="truncate text-xs text-muted-foreground">{state.eventName || "EventOps"}</p>
       </div>
+      <button
+        type="button"
+        aria-label="Sign out"
+        title="Sign out"
+        onClick={() => void signOut()}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <LogOut className="h-4 w-4" />
+      </button>
     </div>
   );
 }
@@ -115,13 +130,21 @@ function SaveErrorBanner() {
   );
 }
 
+// Only a signed-in Administrator sees anything. Everyone else is sent to the entry page or their own module.
 export function AdminShell({ children }: { children: ReactNode }) {
+  return (
+    <RoleGuard role="admin">
+      <AdminFrame>{children}</AdminFrame>
+    </RoleGuard>
+  );
+}
+
+function AdminFrame({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const { state, saving } = useEventStore();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <Toaster position="bottom-right" />
       {/* Sidebar: always visible on large screens */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col gap-6 border-r border-border bg-card py-5 lg:flex">
         <Brand />

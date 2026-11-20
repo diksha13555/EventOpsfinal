@@ -11,23 +11,21 @@ import {
 } from "react";
 import {
   addIssueApi,
-  addExpenseApi,
   addTaskApi,
   getEventData,
   resetDemoDataApi,
-  moveTaskApi,
   resolveIssueApi,
+  setTaskStatusApi,
   type ApiResult,
 } from "./event-api";
 import {
   EMPTY_STATE,
+  TASK_STAGES,
   type EventData,
   type EventState,
   type Priority,
   type Severity,
-  type TaskStatus,
 } from "./event-data";
-import { placeTask } from "./task-order";
 
 /*
   How data flows:
@@ -40,8 +38,7 @@ import { placeTask } from "./task-order";
 type Action =
   | { type: "replace"; data: EventData }
   | { type: "add_task"; title: string; priority: Priority; due: string; now: number }
-  | { type: "move_task"; id: number; status: TaskStatus; index: number; reason: string; now: number }
-  | { type: "add_expense"; categoryId: number; amount: number; note: string; spentOn: string; now: number }
+  | { type: "move_task"; id: number; now: number }
   | { type: "add_issue"; title: string; severity: Severity; now: number }
   | { type: "resolve_issue"; id: number; now: number };
 
@@ -68,7 +65,7 @@ function reducer(state: EventState, action: Action): EventState {
             due: action.due,
             priority: action.priority,
             status: "Backlog",
-            blockedReason: "",
+            note: "",
           },
         ],
         activity: log(state, `Task added: ${action.title}`, action.now),
@@ -77,23 +74,14 @@ function reducer(state: EventState, action: Action): EventState {
     case "move_task": {
       const task = state.tasks.find((t) => t.id === action.id);
       if (!task) return state;
-      const tasks = placeTask(state.tasks, action.id, action.status, action.index, action.reason);
-      if (action.status === task.status) return { ...state, tasks }; // only reordered: nothing to log
-      const why = action.status === "Blocked" ? ` (${tasks.find((t) => t.id === task.id)?.blockedReason ?? ""})` : "";
-      return { ...state, tasks, activity: log(state, `${task.title} moved to ${action.status}${why}`, action.now) };
-    }
-
-    case "add_expense": {
-      const category = state.budget.find((b) => b.id === action.categoryId);
-      if (!category) return state;
+      const next = TASK_STAGES[TASK_STAGES.indexOf(task.status) + 1]; // Done has no next stage
+      if (!next) return state;
       return {
         ...state,
-        budget: state.budget.map((b) => (b.id === category.id ? { ...b, spent: b.spent + action.amount } : b)),
-        expenses: [
-          { id: tempId(action.now), categoryId: category.id, amount: action.amount, note: action.note, spentOn: action.spentOn },
-          ...state.expenses,
-        ],
-        activity: log(state, `Expense added: ₹${action.amount.toLocaleString("en-IN")} to ${category.head}`, action.now),
+        tasks: state.tasks.map((t) =>
+          t.id === task.id ? { ...t, status: next, note: next === "Blocked" ? t.note : "" } : t,
+        ),
+        activity: log(state, `${task.title} moved to ${next}`, action.now),
       };
     }
 
@@ -130,9 +118,8 @@ type Store = {
   retryLoad: () => void;
   dismissSaveError: () => void;
   addTask: (title: string, priority: Priority, due: string) => void;
-  moveTask: (id: number, status: TaskStatus, index: number, reason?: string) => void;
+  moveTask: (id: number) => void;
   addIssue: (title: string, severity: Severity) => void;
-  addExpense: (categoryId: number, amount: number, note: string, spentOn: string) => void;
   resolveIssue: (id: number) => void;
   resetDemo: () => Promise<boolean>; // true when the reset worked
 };
@@ -152,6 +139,7 @@ export function EventStoreProvider({ children }: { children: ReactNode }) {
   const [saving, setSaving] = useState(false);
   const pending = useRef(0); // how many changes are still being saved
   const lastGood = useRef<EventData | null>(null); // the last data the database confirmed
+  const version = useRef(0); // goes up on every change we make, so a slow refresh cannot undo it
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -166,12 +154,32 @@ export function EventStoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Quietly picks up changes made by other people (for example a volunteer finishing a task).
+  // It does nothing while one of our own changes is still being saved, and throws away an answer
+  // that arrives after we changed something, so it can never overwrite newer work.
+  const refresh = useCallback(async () => {
+    if (pending.current !== 0) return;
+    const started = version.current;
+    try {
+      const r = await getEventData();
+      if (r.ok && pending.current === 0 && version.current === started) {
+        lastGood.current = r.data;
+        dispatch({ type: "replace", data: r.data });
+      }
+    } catch {
+      // A failed background refresh is not worth interrupting anyone for.
+    }
+  }, []);
+
   useEffect(() => {
     setNow(Date.now());
     void load();
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      if (!document.hidden && lastGood.current) void refresh();
+    }, 30_000);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, refresh]);
 
   // After a failed save: go back to what the database last confirmed, then try to refresh.
   const undoUnsaved = useCallback(async () => {
@@ -185,6 +193,7 @@ export function EventStoreProvider({ children }: { children: ReactNode }) {
   const persist = useCallback(
     async (call: () => Promise<ApiResult>): Promise<boolean> => {
       pending.current += 1;
+      version.current += 1;
       setSaving(true);
       let ok = false;
       try {
@@ -224,16 +233,13 @@ export function EventStoreProvider({ children }: { children: ReactNode }) {
         void persist(() => addTaskApi({ data: { title, priority, due } }));
       },
 
-      moveTask: (id, status, index, reason) => {
+      moveTask: (id) => {
         const task = state.tasks.find((t) => t.id === id);
         if (!task || id < 0) return; // still being saved
-        dispatch({ type: "move_task", id, status, index, reason: reason ?? "", now: Date.now() });
-        void persist(() => moveTaskApi({ data: { id, status, index, ...(reason ? { reason } : {}) } }));
-      },
-
-      addExpense: (categoryId, amount, note, spentOn) => {
-        dispatch({ type: "add_expense", categoryId, amount, note, spentOn, now: Date.now() });
-        void persist(() => addExpenseApi({ data: { categoryId, amount, note, spentOn } }));
+        const next = TASK_STAGES[TASK_STAGES.indexOf(task.status) + 1];
+        if (!next) return;
+        dispatch({ type: "move_task", id, now: Date.now() });
+        void persist(() => setTaskStatusApi({ data: { id, status: next } }));
       },
 
       addIssue: (title, severity) => {
