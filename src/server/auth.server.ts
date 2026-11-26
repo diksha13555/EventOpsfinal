@@ -153,6 +153,24 @@ export async function guarded<T>(
     return { ok: true, data: await work(gate.user) };
   } catch (err) {
     console.error("[auth] guarded call failed:", err);
+    const safeMessages = new Set([
+      "Select an event",
+      "Registration closed",
+      "Already registered or event full",
+      "Team name required",
+      "Teams unavailable",
+      "You already belong to a team for this event",
+      "Team name already exists",
+      "Team not found",
+      "Team full or already joined"
+    ]);
+    if (err instanceof Error && safeMessages.has(err.message)) {
+      return {
+        ok: false,
+        problem: err.message,
+        hint: "Check your selection and try again."
+      };
+    }
     return { ok: false, ...describeError(err) };
   }
 }
